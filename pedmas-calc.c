@@ -7,9 +7,13 @@
 
 #define TOKEN_SIZE 100
 
+const char allowedOperators = "+-*/^";
+
 typedef struct Operation
 {
-
+    char operator;
+    double op1, op2;
+    struct Operation *nestedOperation;
 } Operation;
 
 char* get_expression(const char **, int);
@@ -67,16 +71,7 @@ char* get_expression(const char **args, int argCount)
     return expression;
 }
 
-void remove_spaces(char *str)
+Operation** tokenise_expression(const char *exp)
 {
-    char *duplicate = str;
-    do
-    {
-        // Move to the next non-space character
-        while (isspace(*duplicate))
-            duplicate++;
-    // Set str[i] (may be a space) to duplicate[i] (which is a non-space char)
-    // Until at NULL character which is zero
-    } while((*str++ = *duplicate++));
+    Operation **operations = calloc(1, sizeof(Operation**));
 }
-
