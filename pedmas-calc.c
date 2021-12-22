@@ -7,7 +7,7 @@
 
 #define TOKEN_SIZE 100
 
-const char allowedOperators = "+-*/^";
+const char allowedOperators[] = "+-*/^";
 
 typedef struct Operation
 {
@@ -71,7 +71,12 @@ char* get_expression(const char **args, int argCount)
     return expression;
 }
 
-Operation** tokenise_expression(const char *exp)
+Operation* tokenise_expression(const char *exp)
 {
-    Operation **operations = calloc(1, sizeof(Operation**));
+    Operation *operation = calloc(1, sizeof(Operation));
+
+    for (int i = 0, len = strlen(exp); i < len; i++)
+    {
+
+    }
 }
