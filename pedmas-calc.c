@@ -182,9 +182,17 @@ char** tokenise_expression(const char *exp, int *length)
 
         c = str[i];
 
+        if ((i == 0 && !isdigit(c))
+            || (strchr("*/^+-", c) != NULL
+                && (strchr("*/^+-(", lastC) != NULL || str[i + 1] == '\0')))
+        {
+            free_tokens(tokens, *length, "Invalid expression");
+            *length = 0;
+            return NULL;
+        }
+
         if (isdigit(c)
             || strchr(sameLineSigns, c) != NULL
-            || (c == '-' && strchr(sameLineSigns, lastC) != NULL && isdigit(str[i + 1]))
             || parenthesisOpen > 0)
         {
             if (c == '(') parenthesisOpen++;
@@ -200,6 +208,13 @@ char** tokenise_expression(const char *exp, int *length)
                 else if (lastC == '(')
                 {
                     free_tokens(tokens, *length, "Nothing inside parentheses");
+                    *length = 0;
+                    return NULL;
+                }
+
+                else if (strchr("*+/^-", lastC) != NULL)
+                {
+                    free_tokens(tokens, *length, "Invalid expression");
                     *length = 0;
                     return NULL;
                 }
