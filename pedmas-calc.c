@@ -28,12 +28,14 @@ Operation* parse_tokens(char **, int);
 void print_parse_tree(const Operation *, int);
 void free_parse_tree(Operation *);
 void free_tokens(char **, int);
+double compute_parse_tree(const Operation *);
 
 int main(int argc, const char *argv[])
 {
     // Get expression string
     char *expressionStr = get_expression(argv, argc);
-    do
+    // Loop until 'q','e','x' is detected as the first character
+    while (strchr("qex", expressionStr[0]) == NULL)
     {
         // Check if previous function call is successful
         if (expressionStr != NULL && strlen(expressionStr) > 0)
@@ -42,18 +44,34 @@ int main(int argc, const char *argv[])
             char **tokens = tokenise_expression(expressionStr, &tokenCount);
             if (tokens != NULL)
             {
-                Operation *parseTree = parse_tokens(tokens, tokenCount);
+                double result = 0;
+                if (tokenCount > 1)
+                {
+                    Operation *parseTree = parse_tokens(tokens, tokenCount);
+                    if (parseTree != NULL)
+                    {
+                        result = compute_parse_tree(parseTree);
+                        free_parse_tree(parseTree);
+                    }
+                }
+                // If [tokenCount] is 1 that means only a number was typed and there's no need for parsing
+                else
+                    // Skip parenthesis if found at beginning
+                    result = strtod((tokens[0][0] == '(') ? &tokens[0][1] : tokens[0], NULL);
 
-                // Compute
+                if (result == (int) result)
+                    printf("= %i\n", (int) result);
+                else
+                    printf("= %f\n", result);
 
-                free_parse_tree(parseTree);
                 free_tokens(tokens, tokenCount);
             }
             free(expressionStr);
         }
+
         expressionStr = get_expression(NULL, 0);
         ptr_check(expressionStr);
-    } while (strchr("qex", expressionStr[0]) == NULL); // Loop until 'q','e','x' is detected as the first character
+    }
 
     if (expressionStr != NULL)
         free(expressionStr);
@@ -132,15 +150,28 @@ char* remove_parenthesis_part(const char *str)
         strcpy(newStr, str);
     else
     {
-        int i = 0, len = strlen(str);
+        int i = 0, openParentheses = 0, len = strlen(str);
         do
         {
             // Check for start of parenthesis
             if (str[i] == '(')
             {
-                // Loop till end of parenthesis is found
-                while (str[i++] != ')' || str[i] == '('/*in case next char is start of new parenthesis*/)
-                    if (str[i] == '\0') break;
+                openParentheses++;
+                // Loop till all parentheses are closed
+                while (openParentheses > 0)
+                {
+                    // If end of string reached exit loop
+                    if (str[i++] == '\0')
+                    {
+                        openParentheses = 0;
+                        break;
+                    }
+
+                    if (str[i] == '(') openParentheses++;
+                    if (str[i] == ')') openParentheses--;
+                }
+                // Make sure not to write a closing parenthesis
+                if (str[i] == ')') i++;
                 // At this point [i] is incremented past the parenthesis portion
             }
             // Add to new string unparenthesised portion of str
@@ -179,6 +210,33 @@ void insert_char(char *str, char newC, int index)
     }
 }
 
+// i.e. 6(20) => 6*(20), (38)(2) => (38)*(2)
+void add_multiplication_sign_btw_parenthesis(char *str)
+{
+    // First occurrence of parenthesis
+    char *parenthesisPos = strchr(str, '(');
+    if (parenthesisPos != NULL)
+    {
+        int i = parenthesisPos - str, len = strlen(str);
+        for (; i < len; i++)
+        {
+            if (str[i] == '(' && i != 0)
+            {
+                //  6(20) or 2(3)^2 || (30)(2) or (3+4)(3+5)
+                if (isdigit(str[i - 1]) || str[i - 1] == ')')
+                {
+                    insert_char(str, '*', i);
+                    len++;
+                }
+            }
+        }
+
+        #ifdef DEBUG_MODE
+            printf("New string: %s\n", str);
+        #endif
+    }
+}
+
 // Returns an array of strings (tokens) that is then converted into an Abstract Syntax Tree (AST)
 // e.g. 3*2+2 =>
     // 3*2 (recursively called) =>
@@ -194,6 +252,7 @@ char** tokenise_expression(const char *exp, int *length)
     ptr_check(str);
     strcpy(str, exp);
     remove_spaces(str);
+    add_multiplication_sign_btw_parenthesis(str);
 
     // Array of strings
     char **tokens = calloc(1, sizeof(char*));
@@ -205,49 +264,64 @@ char** tokenise_expression(const char *exp, int *length)
     *length = 1; // Keeps track of number of strings in [tokens]
     
     int currentTokenIndex = 0, currentTokenCapacity = TOKEN_SIZE, openParentheses = 0;
-    char c, lastC;
+    char c = 0, lastC = 0;
     // Determines which signs to treat as demarcations (check example at the top of function)
     char sameLineSigns[10], newLineSigns[10];
 
-    // Remove parenthesis portion to not get confused
-    // e.g in "3*(3+2)" function should not see the '+' because it's inside parenthesis
-    char *withoutParenthesis = remove_parenthesis_part(str);
-    if (contains_chars(withoutParenthesis, "+-"))
-    {
-        // Treat numbers with "*/^()" as single quantities rather than operations
-        // Break up numbers with "+-" into separate tokens
-        strcpy(sameLineSigns, "*/^()"), strcpy(newLineSigns, "+-");
-    }
+    checkSigns:
+        ; // Satisfy compiler
+        // Remove parenthesis portion to not get confused
+        // e.g in "3*(3+2)" function should not see the '+' because it's inside parenthesis
+        char *withoutParenthesis = remove_parenthesis_part(str);
+        if (contains_chars(withoutParenthesis, "+-"))
+        {
+            // Treat numbers with "*/^()" as single quantities rather than operations
+            // Break up numbers with "+-" into separate tokens
+            strcpy(sameLineSigns, "*/^()"), strcpy(newLineSigns, "+-");
+        }
 
-    else if (contains_chars(withoutParenthesis, "*/"))
-    {
-        // Treat numbers with "^()" as single quantities rather than operations
-        // Break up numbers with "*/" into separate tokens
-        strcpy(sameLineSigns, "^()"), strcpy(newLineSigns, "*/");
-    }
+        else if (contains_chars(withoutParenthesis, "*/"))
+        {
+            // Treat numbers with "^()" as single quantities rather than operations
+            // Break up numbers with "*/" into separate tokens
+            strcpy(sameLineSigns, "^()"), strcpy(newLineSigns, "*/");
+        }
 
-    else if (contains_chars(withoutParenthesis, "^"))
-    {
-        // Treat numbers with "()" as single quantities rather than operations
-        // Break up numbers with "^" into separate tokens
-        strcpy(sameLineSigns, "()"), strcpy(newLineSigns, "^");
-    }
-    
-    // If no signs seen but only "()" (an '*' sign will be added progmatically)
-    else
-    {
-        // Treat numbers with "()" as single quantities rather than operations
-        // Break up numbers with "*" into separate tokens
-         strcpy(sameLineSigns, "()"), strcpy(newLineSigns, "*");
-    }
+        else if (contains_chars(withoutParenthesis, "^"))
+        {
+            // Treat numbers with "()" as single quantities rather than operations
+            // Break up numbers with "^" into separate tokens
+            strcpy(sameLineSigns, "()"), strcpy(newLineSigns, "^");
+        }
+        
+        // If no signs seen
+        else
+        {
+            // Whole expression is wrapped inside a parenthesis
+            if (contains_chars(str, "()"))
+            {
+                // Copy string without starting parenthesis
+                strcpy(withoutParenthesis, str + 1);
+                // Remove closing parenthesis
+                if (withoutParenthesis[strlen(str) - 2] == ')')
+                    withoutParenthesis[strlen(str) - 2] = '\0';
+                // Clear [str]
+                memset(str, 0, strlen(str));
+                // Copy contents of [withoutParenthesis] into [str]
+                strcpy(str, withoutParenthesis);
+                free(withoutParenthesis);
+                goto checkSigns; // Go back to the top
+            }
+            // Else a number or invalid expression
+        }
 
     #ifdef DEBUG_MODE
-        printf("%s\n", withoutParenthesis);
-        printf("sameLineSigns: %s, newLineSigns: %s\n", sameLineSigns, newLineSigns);
+        printf("Without parenthesis: %s\n", withoutParenthesis);
+        printf("Same line signs: %s, New line signs: %s\n", sameLineSigns, newLineSigns);
     #endif
     free(withoutParenthesis);
 
-    for (int i = 0, len = strlen(exp); i < len; i++)
+    for (int i = 0, len = strlen(str); i < len; i++)
     {
         // If current token's length is almost greater than it's capacity, allocate more memory
         if (strlen(tokens[currentTokenIndex]) >= currentTokenCapacity)
@@ -262,9 +336,11 @@ char** tokenise_expression(const char *exp, int *length)
             // The first character is not a digit or parenthesis opening
             // Current and last characters are signs
             // Current character is a sign and the last character in the string
+            // Decimal sign detected without a number before it
         if ((i == 0 && !isdigit(c) && c != '(')
-            || (strchr("*/^+-", c) != NULL
-                && (strchr("*/^+-(", lastC) != NULL || str[i + 1] == '\0')))
+            || (strchr("*/^+-.", c) != NULL
+                && (strchr("*/^+-(.", lastC) != NULL || str[i + 1] == '\0'))
+            || (c == '.' && !isdigit(lastC)))
         {
             printf("Invalid expression\n");
             free_tokens(tokens, *length);
@@ -273,19 +349,10 @@ char** tokenise_expression(const char *exp, int *length)
         }
 
         if (isdigit(c)
+            || c == '.'
             || strchr(sameLineSigns, c) != NULL // Current character is one of [sameLineSigns]
             || openParentheses > 0)
         {
-            // If current character is a digit or closing parenthesis and next character is an opening parenthesis
-            // i.e. 6(20), (38)(2), 6(20+2)
-            // Add a multiplication sign '*' after current character
-            if ((isdigit(c) || c == ')')
-                && (i + 1 < len && str[i + 1] == '('))
-            {
-                insert_char(str, '*', i + 1);
-                len++;
-            }
-
             if (c == '(')
                 openParentheses++;
             else if (c == ')')
@@ -427,8 +494,10 @@ Operation* parse_tokens(char **tokens, int length)
             if (contains_chars(token, signs) || (contains_chars(token, signs) && contains_chars(token, "()")))
             {
                 char tokenExpr[strlen(token) + 1]; // String to store expression
-                // If expression starts with a parenthesis
-                if (token[0] == '(')
+                char *withoutParenthesis = remove_parenthesis_part(token);
+                ptr_check(withoutParenthesis);
+                // If expression starts with a parenthesis and there are no signs outside parenthesis
+                if (token[0] == '(' && !contains_chars(withoutParenthesis, signs))
                 {
                     // Get location of last bracket
                     char *lastBracket = strrchr(token, ')');
@@ -441,6 +510,8 @@ Operation* parse_tokens(char **tokens, int length)
                 else
                     // Copy whole string
                     strcpy(tokenExpr, token);
+
+                free(withoutParenthesis);
 
                 int tokenCount = 0;
                 // Get tokens of inner expression
@@ -571,4 +642,45 @@ void free_parse_tree(Operation *head)
 
     // Free node
     free(head);
+}
+
+double compute_parse_tree(const Operation *tree)
+{
+    double result = 0;
+    double op1 = (tree->nestedOp1 != NULL)
+        ? compute_parse_tree(tree->nestedOp1)
+        : tree->op1;
+    double op2 = (tree->nestedOp2 != NULL)
+        ? compute_parse_tree(tree->nestedOp2)
+        : tree->op2;
+
+    switch (tree->operator)
+    {
+        case '+':
+            result = op1 + op2;
+            break;
+
+        case '-':
+            result = op1 - op2;
+            break;
+
+        case '*':
+            result = op1 * op2;
+            break;
+
+        case '/':
+            result = op1 / op2;
+            break;
+        
+        case '^':
+            result = pow(op1, op2);
+            break;
+        
+        default:
+            printf("Ahh!!!\nInternal error\n");
+            exit(EXIT_FAILURE);
+            break;
+    }
+
+    return result;
 }
