@@ -6,7 +6,7 @@
 #include <math.h>
 #include <stdbool.h>
 
-#define TOKEN_SIZE 100
+#define TOKEN_SIZE 25
 #define ptr_check(ptr) if ((ptr) == NULL)\
                         {\
                             printf("Memory allocation failed\nExiting...\n");\
@@ -22,7 +22,7 @@ typedef struct Operation
     struct Operation *nestedOp1, *nestedOp2; // inner operations
 } Operation;
 
-char* get_expression(const char **, int);
+char* get_expression(void);
 char** tokenise_expression(const char *, int *);
 Operation* parse_tokens(char **, int);
 void print_parse_tree(const Operation *, int);
@@ -33,7 +33,7 @@ double compute_parse_tree(const Operation *);
 int main(int argc, const char *argv[])
 {
     // Get expression string
-    char *expressionStr = get_expression(argv, argc);
+    char *expressionStr = get_expression();
     // Loop until 'q','e','x' is detected as the first character
     while (strchr("qex", expressionStr[0]) == NULL)
     {
@@ -69,7 +69,7 @@ int main(int argc, const char *argv[])
             free(expressionStr);
         }
 
-        expressionStr = get_expression(NULL, 0);
+        expressionStr = get_expression();
         ptr_check(expressionStr);
     }
 
@@ -79,32 +79,16 @@ int main(int argc, const char *argv[])
     return EXIT_SUCCESS;
 }
 
-char* get_expression(const char **args, int argCount)
+char* get_expression(void)
 {
-    size_t outSize = TOKEN_SIZE; // Memory allocation size for the string
-    
+    size_t outSize = 10; // Memory allocation size for the string
     char *expression = calloc(outSize, sizeof(char));
     ptr_check(expression);
 
-    // If args supplied
-    if (argCount > 1 && args != NULL)
-    {
-        // Skip first arg: file name
-        for (int i = 1; i < argCount; i++)
-        {
-            // Add each word in args to expression string
-            strcat(expression, args[i]);
-        }
-    }
-
-    // If no arg, get input from user
-    else
-    {
-        printf("Type expression: "), fflush(stdout);
-        getline(&expression, &outSize, stdin);
-        // Remove new line character at the end of the string
-        expression[strlen(expression) - 1] = '\0';
-    }
+    printf("Type expression: "), fflush(stdout);
+    getline(&expression, &outSize, stdin);
+    // Remove new line character at the end of the string
+    expression[strlen(expression) - 1] = '\0';
 
     return expression;
 }
@@ -345,6 +329,7 @@ char** tokenise_expression(const char *exp, int *length)
             printf("Invalid expression\n");
             free_tokens(tokens, *length);
             *length = 0;
+            free(str);
             return NULL;
         }
 
@@ -363,6 +348,7 @@ char** tokenise_expression(const char *exp, int *length)
                     printf("Matching parenthesis not found\n");
                     free_tokens(tokens, *length);
                     *length = 0;
+                    free(str);
                     return NULL;
                 }
 
@@ -372,6 +358,7 @@ char** tokenise_expression(const char *exp, int *length)
                     printf("Nothing inside parentheses\n");
                     free_tokens(tokens, *length);
                     *length = 0;
+                    free(str);
                     return NULL;
                 }
                 
@@ -381,6 +368,7 @@ char** tokenise_expression(const char *exp, int *length)
                     printf("Invalid expression\n");
                     free_tokens(tokens, *length);
                     *length = 0;
+                    free(str);
                     return NULL;
                 }
 
@@ -398,6 +386,7 @@ char** tokenise_expression(const char *exp, int *length)
                 printf("Incomplete expression\n");
                 free_tokens(tokens, *length);
                 *length = 0;
+                free(str);
                 return NULL;
             }
 
@@ -427,6 +416,7 @@ char** tokenise_expression(const char *exp, int *length)
             printf("Invalid character detected: '%c'\n", c);
             free_tokens(tokens, *length);
             *length = 0;
+            free(str);
             return NULL;
         }
 
@@ -439,6 +429,7 @@ char** tokenise_expression(const char *exp, int *length)
         printf("Matching parenthesis not found\n");
         free_tokens(tokens, *length);
         *length = 0;
+        free(str);
         return NULL;
     }
 
