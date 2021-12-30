@@ -286,9 +286,9 @@ char** tokenise_expression(const char *exp, int *length)
 
     #ifdef DEBUG_MODE
         printf("Tokens:\n-------------------\n");
-        for (int i = 0; i < tokenCount; i++)
+        for (int i = 0; i < *length; i++)
             printf("%s\n", tokens[i]);
-        printf("-------------------\n")
+        printf("-------------------\n");
     #endif
 
     return tokens;
@@ -381,7 +381,7 @@ Operation* parse_tokens(char **tokens, int length)
 
     #ifdef DEBUG_MODE
         printf("Parse tree\n--------------------------------------\n");
-        print_parse_tree(parseTree, 0);
+        print_parse_tree(head, 0);
         printf("--------------------------------------\n");
     #endif
 
