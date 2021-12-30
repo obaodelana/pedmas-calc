@@ -8,18 +8,21 @@
 
 #define TOKEN_SIZE 100
 
-const char allowedOperators[] = "+-*/^";
+const char signs[] = "+-*/^";
 
 typedef struct Operation
 {
-    char ope;
+    char operator;
     double op1, op2;
-    struct Operation *nestedOperation;
+    struct Operation *nestedOp1, *nestedOp2;
 } Operation;
 
 char* get_expression(const char **, int);
 char** tokenise_expression(const char *, int *);
-double compute_expression(char *);
+Operation* parse_tokens(char **, int);
+void print_parse_tree(const Operation *, int);
+void free_parse_tree(Operation *);
+void free_tokens(char **, int);
 
 int main(int argc, const char *argv[])
 {
@@ -32,14 +35,12 @@ int main(int argc, const char *argv[])
             char **tokens = tokenise_expression(expressionStr, &tokenCount);
             if (tokens != NULL)
             {
-                #ifdef DEBUG_MODE
-                    for (int i = 0; i < tokenCount; i++)
-                    {
-                        printf("%s\n", tokens[i]);
-                    }
-                #endif
+                Operation *parseTree = parse_tokens(tokens, tokenCount);
 
-                free(tokens);
+                // Compute
+
+                free_parse_tree(parseTree);
+                free_tokens(tokens, tokenCount);
             }
             free(expressionStr);
         }
@@ -109,7 +110,8 @@ void remove_spaces(char *str)
 
 char* remove_parenthesis_part(const char *str)
 {
-    char *newStr = calloc(strlen(str), sizeof(char));
+    char *newStr = calloc(strlen(str) + 1, sizeof(char));
+    if (newStr == NULL) return NULL;
 
     if (!contains_chars(str, "()"))
         strcpy(newStr, str);
@@ -128,17 +130,6 @@ char* remove_parenthesis_part(const char *str)
     }
 
     return newStr;
-}
-
-void free_tokens(char **tokens, int length, const char *message)
-{
-    printf("%s\n", message);
-    for (int i = 0; i < length; i++)
-    {
-        if (tokens[i] != NULL)
-            free(tokens[i]);
-    }
-    free(tokens);
 }
 
 char** tokenise_expression(const char *exp, int *length)
@@ -173,6 +164,12 @@ char** tokenise_expression(const char *exp, int *length)
         strcpy(sameLineSigns, "()");
         strcpy(newLineSigns, "^");
     }
+    
+    else
+    {
+        strcpy(sameLineSigns, "*/^()");
+        strcpy(newLineSigns, "+-");
+    }
     free(withoutParenthesis);
 
     for (int i = 0, len = strlen(exp); i < len; i++)
@@ -182,11 +179,12 @@ char** tokenise_expression(const char *exp, int *length)
 
         c = str[i];
 
-        if ((i == 0 && !isdigit(c))
+        if ((i == 0 && !isdigit(c) && c != '(')
             || (strchr("*/^+-", c) != NULL
                 && (strchr("*/^+-(", lastC) != NULL || str[i + 1] == '\0')))
         {
-            free_tokens(tokens, *length, "Invalid expression");
+            printf("Invalid expression\n");
+            free_tokens(tokens, *length);
             *length = 0;
             return NULL;
         }
@@ -195,26 +193,41 @@ char** tokenise_expression(const char *exp, int *length)
             || strchr(sameLineSigns, c) != NULL
             || parenthesisOpen > 0)
         {
-            if (c == '(') parenthesisOpen++;
+            if (c == '(')
+            {
+                if (lastC == ')')
+                {
+                    printf("No operator between parentheses\n");
+                    free_tokens(tokens, *length);
+                    *length = 0;
+                    return NULL;                    
+                }
+
+                parenthesisOpen++;
+            }
+            
             else if (c == ')')
             {
                 if (parenthesisOpen <= 0)
                 {
-                    free_tokens(tokens, *length, "Matching parenthesis not found");
+                    printf("Matching parenthesis not found\n");
+                    free_tokens(tokens, *length);
                     *length = 0;
                     return NULL;
                 }
 
                 else if (lastC == '(')
                 {
-                    free_tokens(tokens, *length, "Nothing inside parentheses");
+                    printf("Nothing inside parentheses\n");
+                    free_tokens(tokens, *length);
                     *length = 0;
                     return NULL;
                 }
 
                 else if (strchr("*+/^-", lastC) != NULL)
                 {
-                    free_tokens(tokens, *length, "Invalid expression");
+                    printf("Invalid expression\n");
+                    free_tokens(tokens, *length);
                     *length = 0;
                     return NULL;
                 }
@@ -229,7 +242,8 @@ char** tokenise_expression(const char *exp, int *length)
         {
             if (str[i + 1] == '\0')
             {
-                free_tokens(tokens, *length, "Incomplete expression");
+                printf("Incomplete expression\n");
+                free_tokens(tokens, *length);
                 *length = 0;
                 return NULL;
             }
@@ -249,15 +263,171 @@ char** tokenise_expression(const char *exp, int *length)
             *length += 2;
         }
 
+        else
+        {
+            printf("Invalid character detected: '%c'\n", c);
+            free_tokens(tokens, *length);
+            *length = 0;
+            return NULL;
+        }
+
         lastC = c;
     }
 
     if (parenthesisOpen > 0)
     {
-        free_tokens(tokens, *length, "Matching parenthesis not found");
+        printf("Matching parenthesis not found\n");
+        free_tokens(tokens, *length);
         *length = 0;
         return NULL;
     }
 
+    free(str);
+
+    #ifdef DEBUG_MODE
+        printf("Tokens:\n-------------------\n");
+        for (int i = 0; i < tokenCount; i++)
+            printf("%s\n", tokens[i]);
+        printf("-------------------\n")
+    #endif
+
     return tokens;
+}
+
+void free_tokens(char **tokens, int length)
+{
+    for (int i = 0; i < length; i++)
+    {
+        if (tokens[i] != NULL)
+            free(tokens[i]);
+    }
+    free(tokens);
+}
+
+Operation* parse_tokens(char **tokens, int length)
+{
+    Operation *head = calloc(1, sizeof(Operation));
+    Operation *pointer = head;
+
+    for (int i = 0; i < length; i++)
+    {
+        char *token = tokens[i];
+        bool operandLine = (i % 2 != 0);
+        bool nextIsSign = (i + 1 < length && strchr(signs, tokens[i + 1][0]) != NULL);
+        
+        // Digit or expression
+        if (!operandLine)
+        {
+            if (contains_chars(token, signs) || (contains_chars(token, signs) && contains_chars(token, "()")))
+            {
+                char tokenExpr[strlen(token) + 1];
+                if (token[0] == '(')
+                {
+                    char *lastBracket = strrchr(token, ')');
+                    int exprCount = lastBracket - (token + 1);
+                    strncpy(tokenExpr, token + 1, exprCount);
+                    tokenExpr[exprCount] = '\0';
+                }
+                else
+                    strcpy(tokenExpr, token);
+
+                int tokenCount = 0;
+                char **nestedTokens = tokenise_expression(tokenExpr, &tokenCount);
+
+                Operation *op = parse_tokens(nestedTokens, tokenCount);
+                free_tokens(nestedTokens, tokenCount);
+
+                if (pointer->operator == 0)
+                    pointer->nestedOp1 = op;
+                else
+                {
+                    if (nextIsSign)
+                    {
+                        Operation *newOp = calloc(1, sizeof(Operation));
+                        newOp->nestedOp1 = op;
+
+                        pointer->nestedOp2 = newOp;
+                        pointer = newOp;
+                    }
+                    else
+                        pointer->nestedOp2 = op;
+                }
+            }
+
+            else
+            {
+                double num = strtod((token[0] == '(' ? (token + 1) : token), NULL);
+                if (pointer->operator == 0)
+                    pointer->op1 = num;
+                else
+                {
+                    if (nextIsSign)
+                    {
+                        Operation *newOp = calloc(1, sizeof(Operation));
+                        newOp->op1 = num;
+
+                        pointer->nestedOp2 = newOp;
+                        pointer = newOp;
+                    }
+                    else
+                        pointer->op2 = num;
+                }
+            }
+        }
+
+        else
+            pointer->operator = token[0];
+    }
+
+    #ifdef DEBUG_MODE
+        printf("Parse tree\n--------------------------------------\n");
+        print_parse_tree(parseTree, 0);
+        printf("--------------------------------------\n");
+    #endif
+
+    return head;
+}
+
+void print_tabs(int n)
+{
+    for (int i = 0; i < n; i++)
+        printf("    ");
+}
+
+void print_parse_tree(const Operation *head, int currentLevel)
+{
+    print_tabs(currentLevel);
+    printf("op1: "), fflush(stdout);
+    if (head->nestedOp1 == NULL)
+        printf("%f\n", head->op1);
+    else
+    {
+        print_tabs(currentLevel);
+        printf("\n");
+        print_parse_tree(head->nestedOp1, currentLevel + 1);
+    }
+
+    print_tabs(currentLevel);
+    printf("operator: %c\n", head->operator);
+
+    print_tabs(currentLevel);
+    printf("op2: "), fflush(stdout);
+    if (head->nestedOp2 == NULL)
+        printf("%f\n", head->op2);
+    else
+    {
+        print_tabs(currentLevel);
+        printf("\n");
+        print_parse_tree(head->nestedOp2, currentLevel + 1);
+    }
+}
+
+void free_parse_tree(Operation *head)
+{
+    if (head->nestedOp1 != NULL)
+        free_parse_tree(head->nestedOp1);
+    if (head->nestedOp2 != NULL)
+        free_parse_tree(head->nestedOp2);
+
+    free(head);
 }
