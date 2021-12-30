@@ -7,14 +7,19 @@
 #include <stdbool.h>
 
 #define TOKEN_SIZE 100
+#define ptr_check(ptr) if ((ptr) == NULL)\
+                        {\
+                            printf("Memory allocation failed\nExiting...\n");\
+                            exit(EXIT_FAILURE);\
+                        } 
 
 const char signs[] = "+-*/^";
 
 typedef struct Operation
 {
-    char operator;
-    double op1, op2;
-    struct Operation *nestedOp1, *nestedOp2;
+    char operator; // +, -, *, /, ^
+    double op1, op2; // operand 1, operand 2
+    struct Operation *nestedOp1, *nestedOp2; // inner operations
 } Operation;
 
 char* get_expression(const char **, int);
@@ -26,9 +31,11 @@ void free_tokens(char **, int);
 
 int main(int argc, const char *argv[])
 {
+    // Get expression string
     char *expressionStr = get_expression(argv, argc);
     do
     {
+        // Check if previous function call is successful
         if (expressionStr != NULL && strlen(expressionStr) > 0)
         {
             int tokenCount = 0;
@@ -45,7 +52,8 @@ int main(int argc, const char *argv[])
             free(expressionStr);
         }
         expressionStr = get_expression(NULL, 0);
-    } while (strchr("qex", expressionStr[0]) == NULL);
+        ptr_check(expressionStr);
+    } while (strchr("qex", expressionStr[0]) == NULL); // Loop until 'q','e','x' is detected as the first character
 
     if (expressionStr != NULL)
         free(expressionStr);
@@ -55,21 +63,19 @@ int main(int argc, const char *argv[])
 
 char* get_expression(const char **args, int argCount)
 {
-    // Memory allocation size for the string
-    size_t outSize = TOKEN_SIZE;
+    size_t outSize = TOKEN_SIZE; // Memory allocation size for the string
+    
     char *expression = calloc(outSize, sizeof(char));
+    ptr_check(expression);
 
     // If args supplied
     if (argCount > 1 && args != NULL)
     {
-        // Skip first arg--which is the file name
+        // Skip first arg: file name
         for (int i = 1; i < argCount; i++)
         {
             // Add each word in args to expression string
             strcat(expression, args[i]);
-            // Add space after concatenation, except on last word
-            if (i != argCount - 1)
-                strcat(expression, " ");
         }
     }
 
@@ -85,19 +91,25 @@ char* get_expression(const char **args, int argCount)
     return expression;
 }
 
+// Util function to check if a string (str) contains any one of the characters in (chars)
 bool contains_chars(const char *str, const char *chars)
 {
     for (int i = 0; chars[i] != '\0'; i++)
     {
+        // If string contains current char
         if (strchr(str, chars[i]) != NULL)
             return true;
     }
+    // Return false after going through all chars
     return false;
 }
 
+// Util function to remove any form of whitespace:
+// space (' '), tab (\v, \t), new line (\n), form feed (\f) or carriage return (\r) 
 void remove_spaces(char *str)
 {
-    if (!contains_chars(str, " \t\r")) return;
+    // If str is null or doesn't contain whitespace, exit
+    if (str == NULL || !contains_chars(str, " \t\r\v\f\n")) return;
 
     char *duplicate = str;
     do
@@ -105,14 +117,17 @@ void remove_spaces(char *str)
         // Iterate until a non-space character is found
         while (isspace(*duplicate))
             duplicate++; // Go to next address / character
-    } while((*str++ = *duplicate++)); // Set str[i] to non-space duplicate[i] until null character
+    } while((*str++ = *duplicate++) != '\0'); // Set str[i] to non-space duplicate[i] until null character (0)
 }
 
+// Util function to remove all characters in between a parenthesis '()'
 char* remove_parenthesis_part(const char *str)
 {
+    // Allocate memory the same size as [str] (+1 to accommodate null character) 
     char *newStr = calloc(strlen(str) + 1, sizeof(char));
-    if (newStr == NULL) return NULL;
+    ptr_check(newStr);
 
+    // If str doesn't contain a parenthesis return original string 
     if (!contains_chars(str, "()"))
         strcpy(newStr, str);
     else
@@ -120,65 +135,133 @@ char* remove_parenthesis_part(const char *str)
         int i = 0, len = strlen(str);
         do
         {
+            // Check for start of parenthesis
             if (str[i] == '(')
             {
-                while (str[i++] != ')')
+                // Loop till end of parenthesis is found
+                while (str[i++] != ')' || str[i] == '('/*in case next char is start of new parenthesis*/)
                     if (str[i] == '\0') break;
+                // At this point [i] is incremented past the parenthesis portion
             }
+            // Add to new string unparenthesised portion of str
             strncat(newStr, &str[i++], 1);
-        } while (i < len);
+        } while (i < len); // Loop till end of string
     }
 
     return newStr;
 }
 
+// Util function to insert a character at a specified index
+void insert_char(char *str, char newC, int index)
+{
+    int len = strlen(str);
+    // If index is greater than string length
+    if (index > len - 1)
+    {
+        printf("Internal error: insert_char(): index is out of bounds");
+        return;
+    }
+
+    // Allocate more memory for new character
+    str = realloc(str, sizeof(char) * (len + 1 /*new char*/ + 1 /*null character*/));
+
+    char prev = str[index];
+    str[index] = newC; // Change character at insertion index
+    // Move each character after insertion index forward including null character
+    for (int i = index + 1; i <= len + 1; i++)
+    {
+        // Store character that's about to be changed
+        char current = str[i];
+        // Change current character to previous character
+        str[i] = prev;
+        // Update previous character
+        prev = current;
+    }
+}
+
+// Returns an array of strings (tokens) that is then converted into an Abstract Syntax Tree (AST)
+// e.g. 3*2+2 =>
+    // 3*2 (recursively called) =>
+        // 3
+        // *
+        // 2
+    // +
+    // 2 
 char** tokenise_expression(const char *exp, int *length)
 {
+    // Create modifiable duplicate of [exp]
     char *str = calloc(strlen(exp) + 1, sizeof(char));
+    ptr_check(str);
     strcpy(str, exp);
     remove_spaces(str);
 
+    // Array of strings
     char **tokens = calloc(1, sizeof(char*));
+    ptr_check(tokens);
+    // First string
     tokens[0] = calloc(TOKEN_SIZE + 1, sizeof(char));
-    *length = 1;
+    ptr_check(tokens[0]);
+
+    *length = 1; // Keeps track of number of strings in [tokens]
     
-    int currentToken = 0, parenthesisOpen = 0;
+    int currentTokenIndex = 0, currentTokenCapacity = TOKEN_SIZE, openParentheses = 0;
     char c, lastC;
+    // Determines which signs to treat as demarcations (check example at the top of function)
     char sameLineSigns[10], newLineSigns[10];
 
+    // Remove parenthesis portion to not get confused
+    // e.g in "3*(3+2)" function should not see the '+' because it's inside parenthesis
     char *withoutParenthesis = remove_parenthesis_part(str);
     if (contains_chars(withoutParenthesis, "+-"))
     {
-        strcpy(sameLineSigns, "*/^()");
-        strcpy(newLineSigns, "+-");
+        // Treat numbers with "*/^()" as single quantities rather than operations
+        // Break up numbers with "+-" into separate tokens
+        strcpy(sameLineSigns, "*/^()"), strcpy(newLineSigns, "+-");
     }
 
     else if (contains_chars(withoutParenthesis, "*/"))
     {
-        strcpy(sameLineSigns, "^()");
-        strcpy(newLineSigns, "*/");
+        // Treat numbers with "^()" as single quantities rather than operations
+        // Break up numbers with "*/" into separate tokens
+        strcpy(sameLineSigns, "^()"), strcpy(newLineSigns, "*/");
     }
 
     else if (contains_chars(withoutParenthesis, "^"))
     {
-        strcpy(sameLineSigns, "()");
-        strcpy(newLineSigns, "^");
+        // Treat numbers with "()" as single quantities rather than operations
+        // Break up numbers with "^" into separate tokens
+        strcpy(sameLineSigns, "()"), strcpy(newLineSigns, "^");
     }
     
+    // If no signs seen but only "()" (an '*' sign will be added progmatically)
     else
     {
-        strcpy(sameLineSigns, "*/^()");
-        strcpy(newLineSigns, "+-");
+        // Treat numbers with "()" as single quantities rather than operations
+        // Break up numbers with "*" into separate tokens
+         strcpy(sameLineSigns, "()"), strcpy(newLineSigns, "*");
     }
+
+    #ifdef DEBUG_MODE
+        printf("%s\n", withoutParenthesis);
+        printf("sameLineSigns: %s, newLineSigns: %s\n", sameLineSigns, newLineSigns);
+    #endif
     free(withoutParenthesis);
 
     for (int i = 0, len = strlen(exp); i < len; i++)
     {
-        if (strlen(tokens[currentToken]) >= 100)
-            tokens[currentToken] = realloc(tokens[currentToken], strlen(tokens[currentToken]) * 2 + 1);
+        // If current token's length is almost greater than it's capacity, allocate more memory
+        if (strlen(tokens[currentTokenIndex]) >= currentTokenCapacity)
+        {
+            tokens[currentTokenIndex] = realloc(tokens[currentTokenIndex], (currentTokenCapacity *= 2) + 1);
+            ptr_check(tokens[currentTokenIndex]);
+        }
 
-        c = str[i];
+        c = str[i]; // Current character
 
+        // If
+            // The first character is not a digit or parenthesis opening
+            // Current and last characters are signs
+            // Current character is a sign and the last character in the string
         if ((i == 0 && !isdigit(c) && c != '(')
             || (strchr("*/^+-", c) != NULL
                 && (strchr("*/^+-(", lastC) != NULL || str[i + 1] == '\0')))
@@ -190,25 +273,25 @@ char** tokenise_expression(const char *exp, int *length)
         }
 
         if (isdigit(c)
-            || strchr(sameLineSigns, c) != NULL
-            || parenthesisOpen > 0)
+            || strchr(sameLineSigns, c) != NULL // Current character is one of [sameLineSigns]
+            || openParentheses > 0)
         {
-            if (c == '(')
+            // If current character is a digit or closing parenthesis and next character is an opening parenthesis
+            // i.e. 6(20), (38)(2), 6(20+2)
+            // Add a multiplication sign '*' after current character
+            if ((isdigit(c) || c == ')')
+                && (i + 1 < len && str[i + 1] == '('))
             {
-                if (lastC == ')')
-                {
-                    printf("No operator between parentheses\n");
-                    free_tokens(tokens, *length);
-                    *length = 0;
-                    return NULL;                    
-                }
-
-                parenthesisOpen++;
+                insert_char(str, '*', i + 1);
+                len++;
             }
-            
+
+            if (c == '(')
+                openParentheses++;
             else if (c == ')')
             {
-                if (parenthesisOpen <= 0)
+                // That is no '(' found before current character
+                if (openParentheses <= 0)
                 {
                     printf("Matching parenthesis not found\n");
                     free_tokens(tokens, *length);
@@ -216,6 +299,7 @@ char** tokenise_expression(const char *exp, int *length)
                     return NULL;
                 }
 
+                // i.e. "()"
                 else if (lastC == '(')
                 {
                     printf("Nothing inside parentheses\n");
@@ -223,7 +307,8 @@ char** tokenise_expression(const char *exp, int *length)
                     *length = 0;
                     return NULL;
                 }
-
+                
+                // Check if a sign is before the closing i.e. "(2*)"
                 else if (strchr("*+/^-", lastC) != NULL)
                 {
                     printf("Invalid expression\n");
@@ -232,14 +317,15 @@ char** tokenise_expression(const char *exp, int *length)
                     return NULL;
                 }
 
-                parenthesisOpen--;
+                openParentheses--;
             }
 
-            strncat(tokens[currentToken], &c, 1);
+            strncat(tokens[currentTokenIndex], &c, 1); // Add character to current token
         }
 
-        else if (strchr(newLineSigns, c) != NULL)
+        else if (strchr(newLineSigns, c) != NULL) // Current character is one of [newLineSigns]
         {
+            // If next character is end of string
             if (str[i + 1] == '\0')
             {
                 printf("Incomplete expression\n");
@@ -249,20 +335,26 @@ char** tokenise_expression(const char *exp, int *length)
             }
 
             // Allocate memory for 2 new rows
-            tokens = realloc(tokens, sizeof(char*) * (++currentToken + 2));
+            tokens = realloc(tokens, sizeof(char*) * (++currentTokenIndex + 2));
+            ptr_check(tokens);
             
             // First row
             // Allocate memory for one character
-            tokens[currentToken] = calloc(1, sizeof(char));
-            strncpy(tokens[currentToken], &c, 1);
+            tokens[currentTokenIndex] = calloc(1, sizeof(char));
+            ptr_check(tokens[currentTokenIndex]);
+            strncpy(tokens[currentTokenIndex], &c, 1);
 
             // Second row
             // Allocate enough memory
-            tokens[++currentToken] = calloc(TOKEN_SIZE + 1, sizeof(char));
+            tokens[++currentTokenIndex] = calloc(TOKEN_SIZE + 1, sizeof(char));
+            ptr_check(tokens[currentTokenIndex]);
+            // Reset token capacity
+            currentTokenCapacity = TOKEN_SIZE;
 
-            *length += 2;
+            *length += 2; // Increment length
         }
 
+        // Character not recognised
         else
         {
             printf("Invalid character detected: '%c'\n", c);
@@ -271,10 +363,11 @@ char** tokenise_expression(const char *exp, int *length)
             return NULL;
         }
 
-        lastC = c;
+        lastC = c; // Save current character
     }
 
-    if (parenthesisOpen > 0)
+    // If after looping through all characters a parenthesis wasn't closed
+    if (openParentheses > 0)
     {
         printf("Matching parenthesis not found\n");
         free_tokens(tokens, *length);
@@ -283,7 +376,8 @@ char** tokenise_expression(const char *exp, int *length)
     }
 
     free(str);
-
+    
+    // Prints tokens in debug mode
     #ifdef DEBUG_MODE
         printf("Tokens:\n-------------------\n");
         for (int i = 0; i < *length; i++)
@@ -296,89 +390,129 @@ char** tokenise_expression(const char *exp, int *length)
 
 void free_tokens(char **tokens, int length)
 {
+    // Free each token string
     for (int i = 0; i < length; i++)
     {
         if (tokens[i] != NULL)
             free(tokens[i]);
     }
+    // Free token array
     free(tokens);
 }
 
+// Turns tokens into an Abstract Syntax Tree (AST)
+// e.g. 3*2+2 =>
+    // op1:
+        // op1: 3
+        // operator: *
+        // op2: 2
+    // operator: +
+    // op2: 2
 Operation* parse_tokens(char **tokens, int length)
 {
-    Operation *head = calloc(1, sizeof(Operation));
-    Operation *pointer = head;
+    Operation *head = calloc(1, sizeof(Operation)); // Starting node
+    ptr_check(head);
+    Operation *pointer = head; // Points to current node
 
     for (int i = 0; i < length; i++)
     {
-        char *token = tokens[i];
-        bool operandLine = (i % 2 != 0);
+        char *token = tokens[i]; // Current token string
+        bool operandLine = (i % 2 != 0); // Operands (+-*/^) are found in odd indexes
         bool nextIsSign = (i + 1 < length && strchr(signs, tokens[i + 1][0]) != NULL);
         
-        // Digit or expression
+        // Number or expression
         if (!operandLine)
         {
+            // If current token is an expression meaning it contains signs or (parentheses and signs)
             if (contains_chars(token, signs) || (contains_chars(token, signs) && contains_chars(token, "()")))
             {
-                char tokenExpr[strlen(token) + 1];
+                char tokenExpr[strlen(token) + 1]; // String to store expression
+                // If expression starts with a parenthesis
                 if (token[0] == '(')
                 {
+                    // Get location of last bracket
                     char *lastBracket = strrchr(token, ')');
-                    int exprCount = lastBracket - (token + 1);
+                    // Compute length of new string by subtracting the location of last bracket from first character
+                    int exprCount = lastBracket - token - 1 /*-1 ensures last parenthesis is not added*/;
+                    // Copy specifed length [exprCount] of characters in [token] from first character 
                     strncpy(tokenExpr, token + 1, exprCount);
-                    tokenExpr[exprCount] = '\0';
+                    tokenExpr[exprCount] = '\0'; // Add null character
                 }
                 else
+                    // Copy whole string
                     strcpy(tokenExpr, token);
 
                 int tokenCount = 0;
+                // Get tokens of inner expression
                 char **nestedTokens = tokenise_expression(tokenExpr, &tokenCount);
 
+                // Get parse tree of inner expression
                 Operation *op = parse_tokens(nestedTokens, tokenCount);
                 free_tokens(nestedTokens, tokenCount);
 
+                // If operator is not set, first operand has not been set
                 if (pointer->operator == 0)
+                    // Set the current node's op1 to new node
                     pointer->nestedOp1 = op;
                 else
                 {
+                    // If there is a sign after expression, create a nested node
                     if (nextIsSign)
                     {
-                        Operation *newOp = calloc(1, sizeof(Operation));
-                        newOp->nestedOp1 = op;
-
-                        pointer->nestedOp2 = newOp;
-                        pointer = newOp;
+                        Operation *nestedOp = calloc(1, sizeof(Operation));
+                        ptr_check(nestedOp);
+                        // Set the nested node's op1 to newly created node
+                        nestedOp->nestedOp1 = op;
+                        
+                        // Set the current node's op2 to nested node
+                        pointer->nestedOp2 = nestedOp;
+                        // Make nested node the current node
+                        pointer = nestedOp;
                     }
                     else
+                        // Set the current node's op2 to new node
                         pointer->nestedOp2 = op;
                 }
             }
 
+            // Just a number
             else
             {
+                // Get number (avoid parenthesis if it's there)
                 double num = strtod((token[0] == '(' ? (token + 1) : token), NULL);
+                // If operator is not set, first operand has not been set
                 if (pointer->operator == 0)
+                    // Set current node's op1 to number
                     pointer->op1 = num;
                 else
                 {
+                    // If there is a sign after expression, create a nested node
                     if (nextIsSign)
                     {
                         Operation *newOp = calloc(1, sizeof(Operation));
+                        ptr_check(newOp);
+                        // Set nested node's op1 to number
                         newOp->op1 = num;
 
+                        // Set current node's op1 to nested node
                         pointer->nestedOp2 = newOp;
+                        // Make nested node the current node
                         pointer = newOp;
                     }
                     else
+                        // Set current node's op2 to number
                         pointer->op2 = num;
                 }
             }
         }
 
+        // Operators (+, -, *, /, ^)
         else
+            // Set current node's operator to first character of token  
             pointer->operator = token[0];
     }
 
+    // Print parse tree if in debug mode
     #ifdef DEBUG_MODE
         printf("Parse tree\n--------------------------------------\n");
         print_parse_tree(head, 0);
@@ -388,35 +522,40 @@ Operation* parse_tokens(char **tokens, int length)
     return head;
 }
 
+// Helps to show nesting in print_parse_tree function
 void print_tabs(int n)
 {
     for (int i = 0; i < n; i++)
-        printf("    ");
+        printf("\t");
 }
 
+// Debugging function to see parse tree
 void print_parse_tree(const Operation *head, int currentLevel)
 {
+    // Operand 1
     print_tabs(currentLevel);
     printf("op1: "), fflush(stdout);
     if (head->nestedOp1 == NULL)
         printf("%f\n", head->op1);
+    // Show nesting if any
     else
     {
-        print_tabs(currentLevel);
         printf("\n");
         print_parse_tree(head->nestedOp1, currentLevel + 1);
     }
-
+    
+    // Operator
     print_tabs(currentLevel);
     printf("operator: %c\n", head->operator);
 
+    // Operator 2
     print_tabs(currentLevel);
     printf("op2: "), fflush(stdout);
     if (head->nestedOp2 == NULL)
         printf("%f\n", head->op2);
+    // Show nesting if any
     else
     {
-        print_tabs(currentLevel);
         printf("\n");
         print_parse_tree(head->nestedOp2, currentLevel + 1);
     }
@@ -424,10 +563,12 @@ void print_parse_tree(const Operation *head, int currentLevel)
 
 void free_parse_tree(Operation *head)
 {
+    // Free inner nodes first
     if (head->nestedOp1 != NULL)
         free_parse_tree(head->nestedOp1);
     if (head->nestedOp2 != NULL)
         free_parse_tree(head->nestedOp2);
 
+    // Free node
     free(head);
 }
