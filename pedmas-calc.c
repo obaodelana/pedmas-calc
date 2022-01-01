@@ -6,7 +6,7 @@
 #include <math.h>
 #include <stdbool.h>
 
-#define TOKEN_SIZE 25
+#define TOKEN_SIZE 20
 #define ptr_check(ptr) if ((ptr) == NULL)\
                         {\
                             printf("Memory allocation failed\nExiting...\n");\
@@ -81,12 +81,14 @@ int main(int argc, const char *argv[])
 
 char* get_expression(void)
 {
-    size_t outSize = 10; // Memory allocation size for the string
+    // Allocate enough memory for a character, new line and null character because getline will realloc 
+    size_t outSize = 3;
     char *expression = calloc(outSize, sizeof(char));
     ptr_check(expression);
 
     printf("Type expression: "), fflush(stdout);
     getline(&expression, &outSize, stdin);
+    ptr_check(expression);
     // Remove new line character at the end of the string
     expression[strlen(expression) - 1] = '\0';
 
@@ -123,17 +125,16 @@ void remove_spaces(char *str)
 }
 
 // Util function to remove all characters in between a parenthesis '()'
-char* remove_parenthesis_part(const char *str)
+char* remove_parenthesis_part(char *str)
 {
-    // Allocate memory the same size as [str] (+1 to accommodate null character) 
-    char *newStr = calloc(strlen(str) + 1, sizeof(char));
-    ptr_check(newStr);
-
     // If str doesn't contain a parenthesis return original string 
     if (!contains_chars(str, "()"))
-        strcpy(newStr, str);
+        return str;
     else
     {
+        // Allocate memory the same size as [str] (+1 to accommodate null character) 
+        char *newStr = calloc(strlen(str) + 1, sizeof(char));
+        ptr_check(newStr);
         int i = 0, openParentheses = 0, len = strlen(str);
         do
         {
@@ -161,9 +162,9 @@ char* remove_parenthesis_part(const char *str)
             // Add to new string unparenthesised portion of str
             strncat(newStr, &str[i++], 1);
         } while (i < len); // Loop till end of string
+        
+        return newStr;
     }
-
-    return newStr;
 }
 
 // Util function to insert a character at a specified index
@@ -197,28 +198,25 @@ void insert_char(char *str, char newC, int index)
 // i.e. 6(20) => 6*(20), (38)(2) => (38)*(2)
 void add_multiplication_sign_btw_parenthesis(char *str)
 {
-    // First occurrence of parenthesis
-    char *parenthesisPos = strchr(str, '(');
-    if (parenthesisPos != NULL)
+    char *parenthesisPos = str;
+    int i = 0;
+    // While an opening parenthesis can be found
+    while((parenthesisPos = strchr(parenthesisPos, '(')) != NULL)
     {
-        int i = parenthesisPos - str, len = strlen(str);
-        for (; i < len; i++)
+        i = parenthesisPos - str;
+        if (i != 0)
         {
-            if (str[i] == '(' && i != 0)
-            {
-                //  6(20) or 2(3)^2 || (30)(2) or (3+4)(3+5)
-                if (isdigit(str[i - 1]) || str[i - 1] == ')')
-                {
-                    insert_char(str, '*', i);
-                    len++;
-                }
-            }
+            //  6(20) or 2(3)^2 || (30)(2) or (3+4)(3+5)
+            if (isdigit(str[i - 1]) || str[i - 1] == ')')
+                insert_char(str, '*', i);
         }
-
-        #ifdef DEBUG_MODE
-            printf("New string: %s\n", str);
-        #endif
+        // Move to next character
+        parenthesisPos++;
     }
+
+    #ifdef DEBUG_MODE
+        printf("New string: %s\n", str);
+    #endif
 }
 
 // Returns an array of strings (tokens) that is then converted into an Abstract Syntax Tree (AST)
@@ -303,13 +301,18 @@ char** tokenise_expression(const char *exp, int *length)
         printf("Without parenthesis: %s\n", withoutParenthesis);
         printf("Same line signs: %s, New line signs: %s\n", sameLineSigns, newLineSigns);
     #endif
-    free(withoutParenthesis);
+    // Free only if [withoutParenthesis] is not the same as [str]
+    if (withoutParenthesis != str)
+        free(withoutParenthesis);
 
     for (int i = 0, len = strlen(str); i < len; i++)
     {
         // If current token's length is almost greater than it's capacity, allocate more memory
         if (strlen(tokens[currentTokenIndex]) >= currentTokenCapacity)
         {
+            #ifdef DEBUG_MODE
+                printf("Resized token #%i\n", currentTokenIndex);
+            #endif
             tokens[currentTokenIndex] = realloc(tokens[currentTokenIndex], (currentTokenCapacity *= 2) + 1);
             ptr_check(tokens[currentTokenIndex]);
         }
@@ -396,7 +399,7 @@ char** tokenise_expression(const char *exp, int *length)
             
             // First row
             // Allocate memory for one character
-            tokens[currentTokenIndex] = calloc(1, sizeof(char));
+            tokens[currentTokenIndex] = calloc(1 + 1, sizeof(char));
             ptr_check(tokens[currentTokenIndex]);
             strncpy(tokens[currentTokenIndex], &c, 1);
 
@@ -502,7 +505,9 @@ Operation* parse_tokens(char **tokens, int length)
                     // Copy whole string
                     strcpy(tokenExpr, token);
 
-                free(withoutParenthesis);
+                // Free only if [withoutParenthesis] is not the same as [token]
+                if (withoutParenthesis != token)
+                    free(withoutParenthesis);
 
                 int tokenCount = 0;
                 // Get tokens of inner expression
