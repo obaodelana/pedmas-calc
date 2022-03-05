@@ -15,45 +15,29 @@
 
 const char signs[] = "+-*/^";
 
-typedef struct Operation
-{
-    char operator; // +, -, *, /, ^
-    double op1, op2; // operand 1, operand 2
-    struct Operation *nestedOp1, *nestedOp2; // inner operations
-} Operation;
-
 char* get_expression(void);
 char** tokenise_expression(const char *, int *);
-Operation* parse_tokens(char **, int);
-void print_parse_tree(const Operation *, int);
-void free_parse_tree(Operation *);
+double compute_tokens(char **, int);
 void free_tokens(char **, int);
-double compute_parse_tree(const Operation *);
 
 int main(int argc, const char *argv[])
 {
     // Get expression string
     char *expressionStr = get_expression();
-    // Loop until 'q','e','x' is detected as the first character
-    while (strchr("qex", expressionStr[0]) == NULL)
+    // Loop until 'q/Q','x/X' is detected as the first character
+    while (strchr("qQxX", expressionStr[0]) == NULL)
     {
         // Check if previous function call is successful
         if (expressionStr != NULL && strlen(expressionStr) > 0)
         {
             int tokenCount = 0;
             char **tokens = tokenise_expression(expressionStr, &tokenCount);
+            free(expressionStr);
             if (tokens != NULL)
             {
                 double result = 0;
                 if (tokenCount > 1)
-                {
-                    Operation *parseTree = parse_tokens(tokens, tokenCount);
-                    if (parseTree != NULL)
-                    {
-                        result = compute_parse_tree(parseTree);
-                        free_parse_tree(parseTree);
-                    }
-                }
+                    result = compute_tokens(tokens, tokenCount);
                 // If [tokenCount] is 1 that means only a number was typed and there's no need for parsing
                 else
                     // Skip parenthesis if found at beginning
@@ -66,7 +50,6 @@ int main(int argc, const char *argv[])
 
                 free_tokens(tokens, tokenCount);
             }
-            free(expressionStr);
         }
 
         expressionStr = get_expression();
@@ -219,7 +202,7 @@ void add_multiplication_sign_btw_parenthesis(char *str)
     #endif
 }
 
-// Returns an array of strings (tokens) that is then converted into an Abstract Syntax Tree (AST)
+// Returns an array of strings (tokens)
 // e.g. 3*2+2 =>
     // 3*2 (recursively called) =>
         // 3
@@ -233,8 +216,7 @@ char** tokenise_expression(const char *exp, int *length)
     char *str = calloc(strlen(exp) + 1, sizeof(char));
     ptr_check(str);
     strcpy(str, exp);
-    remove_spaces(str);
-    add_multiplication_sign_btw_parenthesis(str);
+    remove_spaces(str), add_multiplication_sign_btw_parenthesis(str);
 
     // Array of strings
     char **tokens = calloc(1, sizeof(char*));
@@ -292,7 +274,7 @@ char** tokenise_expression(const char *exp, int *length)
                 // Copy contents of [withoutParenthesis] into [str]
                 strcpy(str, withoutParenthesis);
                 free(withoutParenthesis);
-                goto checkSigns; // Go back to the top
+                goto checkSigns; // Go back to the top (loops until all unnecessary parentheses are removed)
             }
             // Else a number or invalid expression
         }
@@ -461,29 +443,20 @@ void free_tokens(char **tokens, int length)
     free(tokens);
 }
 
-// Turns tokens into an Abstract Syntax Tree (AST)
-// e.g. 3*2+2 =>
-    // op1:
-        // op1: 3
-        // operator: *
-        // op2: 2
-    // operator: +
-    // op2: 2
-Operation* parse_tokens(char **tokens, int length)
+double compute_tokens(char **tokens, int length)
 {
-    Operation *head = calloc(1, sizeof(Operation)); // Starting node
-    ptr_check(head);
-    Operation *pointer = head; // Points to current node
+    double result = 0;
+    char currentOperator = '+';
 
     for (int i = 0; i < length; i++)
     {
         char *token = tokens[i]; // Current token string
         bool operandLine = (i % 2 != 0); // Operands (+-*/^) are found in odd indexes
-        bool nextIsSign = (i + 1 < length && strchr(signs, tokens[i + 1][0]) != NULL);
         
         // Number or expression
         if (!operandLine)
         {
+            double num = 0;
             // If current token is an expression meaning it contains signs or (parentheses and signs)
             if (contains_chars(token, signs) || (contains_chars(token, signs) && contains_chars(token, "()")))
             {
@@ -491,6 +464,8 @@ Operation* parse_tokens(char **tokens, int length)
                 char *withoutParenthesis = remove_parenthesis_part(token);
                 ptr_check(withoutParenthesis);
                 // If expression starts with a parenthesis and there are no signs outside parenthesis
+                // i.e. whole expression is encapsulated in parenthesis
+                // Remove parenthesis and copy to [tokenExpr]
                 if (token[0] == '(' && !contains_chars(withoutParenthesis, signs))
                 {
                     // Get location of last bracket
@@ -506,176 +481,53 @@ Operation* parse_tokens(char **tokens, int length)
                     strcpy(tokenExpr, token);
 
                 // Free only if [withoutParenthesis] is not the same as [token]
-                if (withoutParenthesis != token)
-                    free(withoutParenthesis);
+                if (withoutParenthesis != token) free(withoutParenthesis);
 
                 int tokenCount = 0;
                 // Get tokens of inner expression
                 char **nestedTokens = tokenise_expression(tokenExpr, &tokenCount);
 
-                // Get parse tree of inner expression
-                Operation *op = parse_tokens(nestedTokens, tokenCount);
-                free_tokens(nestedTokens, tokenCount);
-
-                // If operator is not set, first operand has not been set
-                if (pointer->operator == 0)
-                    // Set the current node's op1 to new node
-                    pointer->nestedOp1 = op;
-                else
-                {
-                    // If there is a sign after expression, create a nested node
-                    if (nextIsSign)
-                    {
-                        Operation *nestedOp = calloc(1, sizeof(Operation));
-                        ptr_check(nestedOp);
-                        // Set the nested node's op1 to newly created node
-                        nestedOp->nestedOp1 = op;
-                        
-                        // Set the current node's op2 to nested node
-                        pointer->nestedOp2 = nestedOp;
-                        // Make nested node the current node
-                        pointer = nestedOp;
-                    }
-                    else
-                        // Set the current node's op2 to new node
-                        pointer->nestedOp2 = op;
-                }
+                // Call function recursively to compute inner tokens
+                num = compute_tokens(nestedTokens, tokenCount);
             }
 
             // Just a number
             else
-            {
                 // Get number (avoid parenthesis if it's there)
-                double num = strtod((token[0] == '(' ? (token + 1) : token), NULL);
-                // If operator is not set, first operand has not been set
-                if (pointer->operator == 0)
-                    // Set current node's op1 to number
-                    pointer->op1 = num;
-                else
-                {
-                    // If there is a sign after expression, create a nested node
-                    if (nextIsSign)
-                    {
-                        Operation *newOp = calloc(1, sizeof(Operation));
-                        ptr_check(newOp);
-                        // Set nested node's op1 to number
-                        newOp->op1 = num;
+                num = strtod((token[0] == '(' ? (token + 1) : token), NULL);
 
-                        // Set current node's op1 to nested node
-                        pointer->nestedOp2 = newOp;
-                        // Make nested node the current node
-                        pointer = newOp;
-                    }
-                    else
-                        // Set current node's op2 to number
-                        pointer->op2 = num;
-                }
+            switch (currentOperator)
+            {
+                case '+':
+                    result += num;
+                    break;
+
+                case '-':
+                    result -= num;
+                    break;
+
+                case '*':
+                    result *= num;
+                    break;
+
+                case '/':
+                    result /= num;
+                    break;
+                
+                case '^':
+                    result = pow(result, num);
+                    break;
+                
+                default:
+                    printf("Ahh!!!\nInternal error\n");
+                    exit(EXIT_FAILURE);
+                    break;
             }
         }
 
-        // Operators (+, -, *, /, ^)
+        // Operator (+, -, *, /, ^)
         else
-            // Set current node's operator to first character of token  
-            pointer->operator = token[0];
-    }
-
-    // Print parse tree if in debug mode
-    #ifdef DEBUG_MODE
-        printf("Parse tree\n--------------------------------------\n");
-        print_parse_tree(head, 0);
-        printf("--------------------------------------\n");
-    #endif
-
-    return head;
-}
-
-// Helps to show nesting in print_parse_tree function
-void print_tabs(int n)
-{
-    for (int i = 0; i < n; i++)
-        printf("\t");
-}
-
-// Debugging function to see parse tree
-void print_parse_tree(const Operation *head, int currentLevel)
-{
-    // Operand 1
-    print_tabs(currentLevel);
-    printf("op1: "), fflush(stdout);
-    if (head->nestedOp1 == NULL)
-        printf("%f\n", head->op1);
-    // Show nesting if any
-    else
-    {
-        printf("\n");
-        print_parse_tree(head->nestedOp1, currentLevel + 1);
-    }
-    
-    // Operator
-    print_tabs(currentLevel);
-    printf("operator: %c\n", head->operator);
-
-    // Operator 2
-    print_tabs(currentLevel);
-    printf("op2: "), fflush(stdout);
-    if (head->nestedOp2 == NULL)
-        printf("%f\n", head->op2);
-    // Show nesting if any
-    else
-    {
-        printf("\n");
-        print_parse_tree(head->nestedOp2, currentLevel + 1);
-    }
-}
-
-void free_parse_tree(Operation *head)
-{
-    // Free inner nodes first
-    if (head->nestedOp1 != NULL)
-        free_parse_tree(head->nestedOp1);
-    if (head->nestedOp2 != NULL)
-        free_parse_tree(head->nestedOp2);
-
-    // Free node
-    free(head);
-}
-
-double compute_parse_tree(const Operation *tree)
-{
-    double result = 0;
-    double op1 = (tree->nestedOp1 != NULL)
-        ? compute_parse_tree(tree->nestedOp1)
-        : tree->op1;
-    double op2 = (tree->nestedOp2 != NULL)
-        ? compute_parse_tree(tree->nestedOp2)
-        : tree->op2;
-
-    switch (tree->operator)
-    {
-        case '+':
-            result = op1 + op2;
-            break;
-
-        case '-':
-            result = op1 - op2;
-            break;
-
-        case '*':
-            result = op1 * op2;
-            break;
-
-        case '/':
-            result = op1 / op2;
-            break;
-        
-        case '^':
-            result = pow(op1, op2);
-            break;
-        
-        default:
-            printf("Ahh!!!\nInternal error\n");
-            exit(EXIT_FAILURE);
-            break;
+            currentOperator = token[0];
     }
 
     return result;
