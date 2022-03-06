@@ -1,6 +1,7 @@
 # PEDMAS Calculator
 I plan on building an interpreter, so to prepare myself for the "mountain" of a task, I built a PEDMAS calculator. The reason I chose this project is because in building both an interpreter and a calculator, parsing has to be done.
 - PEDMAS (`Parenthesis Exponents Division Multiplication Addition Subtraction`) is an order of operations rule that tells the correct sequence of evaluating a math expression.
+- You can test it by typing `make` and running `./pedmas-calc`.
 
 ![Screenshot](images/Screenshot.png)
 
