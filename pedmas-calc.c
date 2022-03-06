@@ -40,7 +40,7 @@ int main(int argc, const char *argv[])
                 double result = 0;
                 if (tokenCount > 1)
                     result = compute_tokens(tokens, tokenCount);
-                // If [tokenCount] is 1 that means only a number was typed and there's no need for parsing
+                // If [tokenCount] is 1 that means only a number was typed
                 else
                     // Skip parenthesis if found at beginning
                     result = strtod((tokens[0][0] == '(') ? &tokens[0][1] : tokens[0], NULL);
