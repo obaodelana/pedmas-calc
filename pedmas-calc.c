@@ -491,6 +491,7 @@ double compute_tokens(char **tokens, int length)
 
                 // Call function recursively to compute inner tokens
                 num = compute_tokens(nestedTokens, tokenCount);
+                free_tokens(nestedTokens, tokenCount);
             }
 
             // Just a number
